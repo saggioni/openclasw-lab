@@ -48,11 +48,23 @@ CONFIG = {
     ).rstrip("/"),
     "gemini_api_key_free": env_str("GEMINI_API_KEY_FREE"),
     "gemini_api_key_paid": env_str("GEMINI_API_KEY_PAID"),
-    "gemini_model_flash": env_str("GEMINI_MODEL_FLASH", "gemini-2.0-flash"),
+    # Backward compatibility: if only GEMINI_MODEL_FLASH is set, use it for both free and paid.
+    "gemini_model_flash_legacy": env_str("GEMINI_MODEL_FLASH", ""),
+    "gemini_model_flash_free": env_str("GEMINI_MODEL_FLASH_FREE", ""),
+    "gemini_model_flash_paid": env_str("GEMINI_MODEL_FLASH_PAID", ""),
     "gemini_model_pro": env_str("GEMINI_MODEL_PRO", "gemini-2.5-pro"),
     "code_tasks_use_free_first": env_bool("CODE_TASKS_USE_FREE_FIRST", False),
     "log_level": env_str("LOG_LEVEL", "INFO").upper(),
 }
+
+if not CONFIG["gemini_model_flash_free"]:
+    CONFIG["gemini_model_flash_free"] = (
+        CONFIG["gemini_model_flash_legacy"] or "gemini-2.5-flash"
+    )
+if not CONFIG["gemini_model_flash_paid"]:
+    CONFIG["gemini_model_flash_paid"] = (
+        CONFIG["gemini_model_flash_legacy"] or "gemini-3-flash-preview"
+    )
 
 logging.basicConfig(
     level=getattr(logging, CONFIG["log_level"], logging.INFO),
@@ -103,10 +115,14 @@ class RouteCandidate:
     @property
     def model_name(self) -> str:
         if self.model_tier == "flash":
-            return CONFIG["gemini_model_flash"]
+            if self.provider_key == "gemini_free":
+                return CONFIG["gemini_model_flash_free"]
+            return CONFIG["gemini_model_flash_paid"]
         if self.model_tier == "pro":
             return CONFIG["gemini_model_pro"]
-        return CONFIG["gemini_model_flash"]
+        if self.provider_key == "gemini_free":
+            return CONFIG["gemini_model_flash_free"]
+        return CONFIG["gemini_model_flash_paid"]
 
 
 def utc_now_ts() -> int:
@@ -605,7 +621,8 @@ class RouterHandler(BaseHTTPRequestHandler):
                         "host": CONFIG["host"],
                         "port": CONFIG["port"],
                         "db_path": CONFIG["db_path"],
-                        "gemini_model_flash": CONFIG["gemini_model_flash"],
+                        "gemini_model_flash_free": CONFIG["gemini_model_flash_free"],
+                        "gemini_model_flash_paid": CONFIG["gemini_model_flash_paid"],
                         "gemini_model_pro": CONFIG["gemini_model_pro"],
                         "has_free_key": bool(CONFIG["gemini_api_key_free"]),
                         "has_paid_key": bool(CONFIG["gemini_api_key_paid"]),
@@ -731,8 +748,10 @@ def validate_boot_config() -> List[str]:
     warnings = []
     if not CONFIG["gemini_api_key_free"] and not CONFIG["gemini_api_key_paid"]:
         warnings.append("Nenhuma key Gemini configurada (free/paid).")
-    if not CONFIG["gemini_model_flash"]:
-        warnings.append("GEMINI_MODEL_FLASH vazio.")
+    if not CONFIG["gemini_model_flash_free"]:
+        warnings.append("GEMINI_MODEL_FLASH_FREE vazio.")
+    if not CONFIG["gemini_model_flash_paid"]:
+        warnings.append("GEMINI_MODEL_FLASH_PAID vazio.")
     if not CONFIG["gemini_model_pro"]:
         warnings.append("GEMINI_MODEL_PRO vazio.")
     return warnings

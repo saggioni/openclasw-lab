@@ -3,7 +3,7 @@
 Laboratório para rodar OpenClaw em uma VPS Ubuntu 24.04 LTS usando Gemini via API com roteamento inteligente de:
 
 - `key gratuita` vs `key paga`
-- `modelo flash` vs `modelo pro`
+- `flash` separado para `free` e `paid`, além de `pro` para tarefas complexas
 - fallback automático quando a key gratuita bater limite/cota
 
 ## Ideia central (roteador)
@@ -34,7 +34,7 @@ Isso permite:
 ## Regras de roteamento (implementadas)
 
 - `chat_rapido`, `resumo`, `classificacao`, `extracao`
-  - tenta `gemini_free + flash`
+  - tenta `gemini_free + flash` (ex.: `gemini-2.5-flash`)
   - fallback: `gemini_paid + flash`
   - fallback final: `gemini_paid + pro`
 
@@ -89,7 +89,8 @@ Preencher no mínimo:
 
 - `GEMINI_API_KEY_FREE`
 - `GEMINI_API_KEY_PAID`
-- `GEMINI_MODEL_FLASH` (use o flash mais atual que você quer)
+- `GEMINI_MODEL_FLASH_FREE` (ex.: `gemini-2.5-flash`)
+- `GEMINI_MODEL_FLASH_PAID` (ex.: `gemini-3-flash-preview`)
 - `GEMINI_MODEL_PRO` (use o pro para tarefas complexas)
 
 Ajuste opcional:
@@ -169,5 +170,4 @@ Payload mínimo:
 
 ## Observação sobre o modelo “mais atual”
 
-Os nomes de modelos Gemini mudam com o tempo. Por isso o router lê `GEMINI_MODEL_FLASH` e `GEMINI_MODEL_PRO` do `.env`, em vez de fixar isso no código.
-
+Os nomes de modelos Gemini mudam com o tempo. Por isso o router lê `GEMINI_MODEL_FLASH_FREE`, `GEMINI_MODEL_FLASH_PAID` e `GEMINI_MODEL_PRO` do `.env`, em vez de fixar isso no código.
