@@ -14,7 +14,7 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 
-# Opcional: limitar acesso ao filesystem mantendo diretórios necessários graváveis
+# Optional: limit filesystem access while keeping required directories writable
 ReadWritePaths=/var/lib/openclaw-router /var/log/openclaw-router /opt/openclaw-router
 
 [Install]

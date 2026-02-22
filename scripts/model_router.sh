@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TASK_TYPE="${1:-planejamento}"
+TASK_TYPE="${1:-planning}"
+
+normalize_task_type() {
+  case "$1" in
+    chat_rapido|chat) echo "quick_chat" ;;
+    resumo) echo "summary" ;;
+    codigo|coding) echo "code" ;;
+    planejamento|plan) echo "planning" ;;
+    raciocinio_complexo) echo "complex_reasoning" ;;
+    contexto_longo) echo "long_context" ;;
+    *) echo "$1" ;;
+  esac
+}
 
 preferred_model() {
   case "$1" in
-    chat_rapido|resumo) echo "qwen2.5:3b" ;;
-    codigo|debug) echo "qwen2.5-coder:7b" ;;
-    planejamento) echo "qwen2.5:7b" ;;
-    raciocinio_complexo|contexto_longo) echo "qwen2.5:14b" ;;
+    quick_chat|summary) echo "qwen2.5:3b" ;;
+    code|debug) echo "qwen2.5-coder:7b" ;;
+    planning) echo "qwen2.5:7b" ;;
+    complex_reasoning|long_context) echo "qwen2.5:14b" ;;
     *) echo "qwen2.5:7b" ;;
   esac
 }
@@ -46,10 +58,11 @@ choose_available_model() {
     fi
   fi
 
-  # Default safe suggestion when ollama is not installed yet.
+  # Safe default suggestion when Ollama is not installed yet.
   echo "$preferred"
 }
 
+TASK_TYPE="$(normalize_task_type "$TASK_TYPE")"
 PREFERRED="$(preferred_model "$TASK_TYPE")"
 CHOSEN="$(choose_available_model "$PREFERRED")"
 

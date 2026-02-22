@@ -1,66 +1,65 @@
 ---
 name: local-llm-router
-description: Escolhe o melhor modelo LLM local (ex: Ollama) para cada tarefa no OpenClaw com heurísticas de tipo de tarefa, custo de latência e fallback quando um modelo não estiver disponível.
+description: Selects the best local LLM model (for example Ollama) for each OpenClaw task using task-type heuristics, latency/cost tradeoffs, and fallback when a model is unavailable.
 ---
 
 # Local LLM Router
 
-Use esta skill quando o usuário quiser rodar modelos locais e escolher automaticamente o melhor modelo para cada situação.
+Use this skill when the user wants to run local models and automatically choose the best model for each situation.
 
-## Objetivo
+## Goal
 
-Selecionar um modelo local por tarefa com foco em:
+Select a local model per task with focus on:
 
-- menor latência aceitável
-- qualidade suficiente para o tipo de tarefa
-- fallback automático
+- acceptable latency
+- enough quality for the task type
+- automatic fallback
 
 ## Workflow
 
-1. Identificar o tipo principal da tarefa:
-   - `chat_rapido`
-   - `resumo`
-   - `codigo`
+1. Identify the main task type:
+   - `quick_chat`
+   - `summary`
+   - `code`
    - `debug`
-   - `planejamento`
-   - `raciocinio_complexo`
-   - `contexto_longo`
-2. Verificar modelos instalados localmente (`ollama list`)
-3. Escolher modelo preferido por tipo
-4. Aplicar fallback se indisponível
-5. Informar decisão ao usuário (modelo + motivo)
+   - `planning`
+   - `complex_reasoning`
+   - `long_context`
+2. Check locally installed models (`ollama list`)
+3. Choose the preferred model for the task type
+4. Apply fallback if unavailable
+5. Report the decision to the user (model + reason)
 
-## Mapa de roteamento (heurística inicial)
+## Routing Map (Initial Heuristic)
 
-- `chat_rapido`, `resumo` -> `qwen2.5:3b`
-- `codigo`, `debug` -> `qwen2.5-coder:7b`
-- `planejamento` -> `qwen2.5:7b`
-- `raciocinio_complexo`, `contexto_longo` -> `qwen2.5:14b`
+- `quick_chat`, `summary` -> `qwen2.5:3b`
+- `code`, `debug` -> `qwen2.5-coder:7b`
+- `planning` -> `qwen2.5:7b`
+- `complex_reasoning`, `long_context` -> `qwen2.5:14b`
 
-## Fallback sugerido
+## Suggested Fallback
 
-Se o modelo preferido não existir, tentar nesta ordem:
+If the preferred model is not available, try in this order:
 
 1. `qwen2.5:7b`
 2. `qwen2.5:3b`
-3. qualquer modelo disponível no `ollama list`
+3. any model available in `ollama list`
 
-## Regras práticas
+## Practical Rules
 
-- Se a VPS for fraca (<= 8 GB RAM), preferir modelos `3b` e `7b`
-- Para tarefas iterativas de coding, priorizar latência (modelo coder menor)
-- Para resposta final importante, considerar reexecutar em modelo mais forte
-- Sempre explicitar quando houve fallback
+- If the VPS is weak (<= 8 GB RAM), prefer `3b` and `7b` models
+- For iterative coding tasks, prioritize latency (smaller coder model)
+- For important final answers, consider rerunning with a stronger model
+- Always state when a fallback happened
 
-## Comandos úteis
+## Useful Commands
 
 ```bash
 ollama list
 ollama show qwen2.5:7b
-ollama run qwen2.5:3b "teste"
+ollama run qwen2.5:3b "test"
 ```
 
-## Implementação local
+## Local Implementation
 
-Se o repositório tiver `scripts/model_router.sh`, use-o para obter a sugestão de modelo antes de invocar o Ollama.
-
+If the repository contains `scripts/model_router.sh`, use it to get a model suggestion before calling Ollama.

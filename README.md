@@ -1,173 +1,177 @@
 # openclaw-lab
 
-Laboratório para rodar OpenClaw em uma VPS Ubuntu 24.04 LTS usando Gemini via API com roteamento inteligente de:
+Lab project to run OpenClaw on an Ubuntu 24.04 LTS VPS using Gemini via API with smart routing for:
 
-- `key gratuita` vs `key paga`
-- `flash` separado para `free` e `paid`, além de `pro` para tarefas complexas
-- fallback automático quando a key gratuita bater limite/cota
+- `free key` vs `paid key`
+- separate `flash` models for `free` and `paid`
+- `pro` for complex tasks
+- automatic fallback when the free key hits quota/rate limits
 
-## Ideia central (roteador)
+## Core Idea (Router)
 
-Em vez de o OpenClaw chamar a API Gemini diretamente, ele chama um serviço local (`router`) na VPS.
+Instead of calling Gemini directly, OpenClaw calls a local router service on the VPS.
 
-Fluxo:
+Flow:
 
-- `OpenClaw` -> `Router local` -> `Gemini API`
-- `Router local` decide `qual key` + `qual modelo`
-- `Router local` registra estado em `SQLite` (persistente em disco)
+- `OpenClaw` -> `Local Router` -> `Gemini API`
+- `Local Router` decides `which key` + `which model`
+- `Local Router` stores state in `SQLite` (persistent on disk)
 
-Isso permite:
+Benefits:
 
-- economizar custo (usar `free + flash` quando possível)
-- usar `paid + pro` em tarefas complexas
-- sobreviver a reboot sem perder cooldown/estado
+- lower cost (use `free + flash` whenever possible)
+- better quality for complex tasks (`paid + pro`)
+- survives reboots without losing cooldown/state
 
-## O que existe neste repositório
+## Repository Contents
 
-- `router/router.py`: API local HTTP (Python stdlib) com fallback Gemini
-- `.env.example`: configuração das duas keys e modelos
-- `deploy/systemd/openclaw-router.service`: serviço `systemd`
-- `install.sh`: instalador para Ubuntu 24.04 (rodando como `root`)
-- `skills/local-llm-router/SKILL.md`: skill antiga de exemplo para LLM local (Ollama)
-- `scripts/model_router.sh`: script antigo de roteamento local (Ollama)
+- `router/router.py`: local HTTP API (Python stdlib) with Gemini fallback routing
+- `.env.example`: configuration template for keys and model names
+- `deploy/systemd/openclaw-router.service`: `systemd` service
+- `install.sh`: Ubuntu 24.04 installer (root/lab mode)
+- `skills/local-llm-router/SKILL.md`: legacy example skill for local LLM routing (Ollama)
+- `scripts/model_router.sh`: legacy local LLM routing helper (Ollama)
 
-## Regras de roteamento (implementadas)
+## Routing Rules (Implemented)
 
-- `chat_rapido`, `resumo`, `classificacao`, `extracao`
-  - tenta `gemini_free + flash` (ex.: `gemini-2.5-flash`)
+- `quick_chat`, `summary`, `classification`, `extraction`
+  - try `gemini_free + flash` first (for example `gemini-2.5-flash`)
   - fallback: `gemini_paid + flash`
-  - fallback final: `gemini_paid + pro`
+  - final fallback: `gemini_paid + pro`
 
-- `codigo`, `debug`
-  - padrão: `gemini_paid + flash`
+- `code`, `debug`
+  - default: `gemini_paid + flash`
   - fallback: `gemini_free + flash`
-  - fallback final: `gemini_paid + pro`
-  - pode inverter via `CODE_TASKS_USE_FREE_FIRST=true`
+  - final fallback: `gemini_paid + pro`
+  - can be inverted with `CODE_TASKS_USE_FREE_FIRST=true`
 
-- `raciocinio_complexo`, `contexto_longo`, `decisao_importante`
-  - tenta `gemini_paid + pro`
+- `complex_reasoning`, `long_context`, `important_decision`
+  - try `gemini_paid + pro`
   - fallback: `gemini_paid + flash`
-  - fallback final: `gemini_free + flash`
+  - final fallback: `gemini_free + flash`
 
-## Persistência (para não perder nada no reboot)
+Note:
+- Portuguese task type aliases are still accepted for backward compatibility (`resumo`, `codigo`, `raciocinio_complexo`, etc.).
 
-- `.env` com chaves: `/opt/openclaw-router/.env`
-- banco SQLite: `/var/lib/openclaw-router/state.db`
-- serviço: `systemd` (`openclaw-router.service`)
-- logs: `journalctl -u openclaw-router`
+## Persistence (Reboot-Safe)
 
-O router salva:
+- Keys file: `/opt/openclaw-router/.env`
+- SQLite state DB: `/var/lib/openclaw-router/state.db`
+- Service: `systemd` (`openclaw-router.service`)
+- Logs: `journalctl -u openclaw-router`
 
-- logs de tentativa/sucesso/erro
-- erro de cota da key gratuita
-- cooldown temporário da key gratuita (para evitar insistir após `429`)
+The router persists:
 
-## Passo a passo (Ubuntu 24.04 LTS, usando `root`)
+- request success/error logs
+- free key quota/rate-limit errors
+- free key cooldown state (to avoid repeated `429` retries)
 
-### 1) Clonar este repositório na VPS
+## Step-by-Step (Ubuntu 24.04 LTS, root)
+
+### 1) Clone this repository on the VPS
 
 ```bash
-git clone <SEU_REPO> /root/openclaw-lab
+git clone <YOUR_REPO_URL> /root/openclaw-lab
 cd /root/openclaw-lab
 ```
 
-### 2) Rodar o instalador
+### 2) Run the installer
 
 ```bash
 bash install.sh
 ```
 
-Isso instala `python3`, `sqlite3`, copia a aplicação para `/opt/openclaw-router` e instala o serviço `systemd`.
+This installs `python3`, `sqlite3`, copies the application to `/opt/openclaw-router`, and installs the `systemd` service.
 
-### 3) Configurar as duas keys e modelos Gemini
+### 3) Configure Gemini keys and models
 
 ```bash
 nano /opt/openclaw-router/.env
 ```
 
-Preencher no mínimo:
+Minimum required values:
 
 - `GEMINI_API_KEY_FREE`
 - `GEMINI_API_KEY_PAID`
-- `GEMINI_MODEL_FLASH_FREE` (ex.: `gemini-2.5-flash`)
-- `GEMINI_MODEL_FLASH_PAID` (ex.: `gemini-3-flash-preview`)
-- `GEMINI_MODEL_PRO` (use o pro para tarefas complexas)
+- `GEMINI_MODEL_FLASH_FREE` (for example `gemini-2.5-flash`)
+- `GEMINI_MODEL_FLASH_PAID` (for example `gemini-3-flash-preview`)
+- `GEMINI_MODEL_PRO` (for complex tasks)
 
-Ajuste opcional:
+Optional tuning:
 
 - `CODE_TASKS_USE_FREE_FIRST=false`
 - `FREE_COOLDOWN_SECONDS=3600`
 
-### 4) Subir o serviço
+### 4) Start the service
 
 ```bash
 systemctl start openclaw-router
 systemctl status openclaw-router --no-pager
 ```
 
-### 5) Testar saúde do serviço
+### 5) Health check
 
 ```bash
 curl -sS http://127.0.0.1:8787/healthz
 ```
 
-### 6) Testar roteamento (sem prompt grande)
+### 6) Test routing (no API generation)
 
 ```bash
-curl -sS "http://127.0.0.1:8787/route?task_type=resumo"
-curl -sS "http://127.0.0.1:8787/route?task_type=raciocinio_complexo"
+curl -sS "http://127.0.0.1:8787/route?task_type=summary"
+curl -sS "http://127.0.0.1:8787/route?task_type=complex_reasoning"
 ```
 
-### 7) Testar geração real
+### 7) Test real generation
 
 ```bash
 curl -sS http://127.0.0.1:8787/generate \
   -H 'Content-Type: application/json' \
   -d '{
-    "task_type": "resumo",
-    "prompt": "Resuma em 3 bullets: a importância de backups em servidores.",
+    "task_type": "summary",
+    "prompt": "Summarize in 3 bullets why backups are important on servers.",
     "max_output_tokens": 200
   }'
 ```
 
-## Integração com OpenClaw
+## OpenClaw Integration
 
-Faça o OpenClaw chamar o router local ao invés de chamar Gemini direto.
+Make OpenClaw call the local router instead of calling Gemini directly.
 
-Endpoint principal:
+Primary endpoint:
 
 - `POST http://127.0.0.1:8787/generate`
 
-Payload mínimo:
+Minimal payload:
 
 ```json
 {
-  "task_type": "codigo",
-  "prompt": "Explique este erro de stack trace..."
+  "task_type": "code",
+  "prompt": "Explain this stack trace error..."
 }
 ```
 
-`task_type` sugeridos:
+Suggested `task_type` values:
 
-- `chat_rapido`
-- `resumo`
-- `codigo`
+- `quick_chat`
+- `summary`
+- `code`
 - `debug`
-- `planejamento`
-- `raciocinio_complexo`
-- `contexto_longo`
+- `planning`
+- `complex_reasoning`
+- `long_context`
 
-## Troubleshooting rápido
+## Troubleshooting
 
-- Serviço não sobe:
+- Service does not start:
   - `journalctl -u openclaw-router -n 200 --no-pager`
-- Erro `403/401`:
-  - revisar keys e permissões da API
-- Erro `429` na key gratuita:
-  - esperado; router coloca `gemini_free` em cooldown e usa `paid`
-- Porta ocupada:
-  - mudar `ROUTER_PORT` no `.env` e reiniciar o serviço
+- `403/401` errors:
+  - check API keys and Gemini API access
+- `429` on the free key:
+  - expected behavior; the router puts `gemini_free` in cooldown and falls back to `paid`
+- Port already in use:
+  - change `ROUTER_PORT` in `.env` and restart the service
 
-## Observação sobre o modelo “mais atual”
+## Model Name Changes
 
-Os nomes de modelos Gemini mudam com o tempo. Por isso o router lê `GEMINI_MODEL_FLASH_FREE`, `GEMINI_MODEL_FLASH_PAID` e `GEMINI_MODEL_PRO` do `.env`, em vez de fixar isso no código.
+Gemini model names change over time. The router reads `GEMINI_MODEL_FLASH_FREE`, `GEMINI_MODEL_FLASH_PAID`, and `GEMINI_MODEL_PRO` from `.env` instead of hardcoding them.

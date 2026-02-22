@@ -248,17 +248,32 @@ STORE = StateStore(CONFIG["db_path"])
 
 
 def normalize_task_type(task_type: Optional[str]) -> str:
-    value = (task_type or "chat_rapido").strip().lower()
+    value = (task_type or "quick_chat").strip().lower()
     aliases = {
-        "chat": "chat_rapido",
-        "quick_chat": "chat_rapido",
-        "summary": "resumo",
-        "code": "codigo",
-        "coding": "codigo",
+        # Canonical English names
+        "chat": "quick_chat",
+        "quick_chat": "quick_chat",
+        "summary": "summary",
+        "code": "code",
+        "coding": "code",
         "bugfix": "debug",
-        "plan": "planejamento",
-        "complex": "raciocinio_complexo",
-        "long_context": "contexto_longo",
+        "plan": "planning",
+        "planning": "planning",
+        "complex": "complex_reasoning",
+        "long_context": "long_context",
+        "classification": "classification",
+        "extraction": "extraction",
+        "important_decision": "important_decision",
+        # Portuguese aliases (backward compatibility)
+        "chat_rapido": "quick_chat",
+        "resumo": "summary",
+        "codigo": "code",
+        "planejamento": "planning",
+        "raciocinio_complexo": "complex_reasoning",
+        "contexto_longo": "long_context",
+        "classificacao": "classification",
+        "extracao": "extraction",
+        "decisao_importante": "important_decision",
     }
     return aliases.get(value, value)
 
@@ -266,13 +281,13 @@ def normalize_task_type(task_type: Optional[str]) -> str:
 def build_candidate_chain(task_type: str) -> List[RouteCandidate]:
     code_free_first = CONFIG["code_tasks_use_free_first"]
 
-    if task_type in {"chat_rapido", "resumo", "classificacao", "extracao"}:
+    if task_type in {"quick_chat", "summary", "classification", "extraction"}:
         chain = [
             RouteCandidate("gemini_free", "flash"),
             RouteCandidate("gemini_paid", "flash"),
             RouteCandidate("gemini_paid", "pro"),
         ]
-    elif task_type in {"codigo", "debug"}:
+    elif task_type in {"code", "debug"}:
         if code_free_first:
             chain = [
                 RouteCandidate("gemini_free", "flash"),
@@ -285,7 +300,7 @@ def build_candidate_chain(task_type: str) -> List[RouteCandidate]:
                 RouteCandidate("gemini_free", "flash"),
                 RouteCandidate("gemini_paid", "pro"),
             ]
-    elif task_type in {"raciocinio_complexo", "contexto_longo", "decisao_importante"}:
+    elif task_type in {"complex_reasoning", "long_context", "important_decision"}:
         chain = [
             RouteCandidate("gemini_paid", "pro"),
             RouteCandidate("gemini_paid", "flash"),
@@ -323,12 +338,12 @@ def choose_candidates(task_type: str) -> Tuple[List[RouteCandidate], List[str]]:
     result: List[RouteCandidate] = []
     for candidate in build_candidate_chain(task_type):
         if not candidate.api_key:
-            reasons.append(f"skip {candidate.provider_key}/{candidate.model_tier}: sem key")
+            reasons.append(f"skip {candidate.provider_key}/{candidate.model_tier}: missing API key")
             continue
         in_cd, until = is_provider_in_cooldown(candidate.provider_key)
         if in_cd:
             reasons.append(
-                f"skip {candidate.provider_key}/{candidate.model_tier}: cooldown ate {iso_utc(until)}"
+                f"skip {candidate.provider_key}/{candidate.model_tier}: cooldown until {iso_utc(until)}"
             )
             continue
         result.append(candidate)
@@ -369,7 +384,7 @@ def gemini_generate(candidate: RouteCandidate, prompt: str, system: str = "", te
                     max_output_tokens: Optional[int] = None) -> Tuple[int, dict]:
     api_key = candidate.api_key
     if not api_key:
-        raise RuntimeError(f"API key ausente para {candidate.provider_key}")
+        raise RuntimeError(f"Missing API key for {candidate.provider_key}")
 
     combined_prompt = prompt
     if system.strip():
@@ -424,7 +439,7 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
     candidates, precheck_reasons = choose_candidates(task_type)
     if not candidates:
         raise RuntimeError(
-            "Nenhum candidato disponível. Verifique GEMINI_API_KEY_FREE/GEMINI_API_KEY_PAID e cooldown." 
+            "No route candidates available. Check GEMINI_API_KEY_FREE/GEMINI_API_KEY_PAID and cooldown state."
             + (" Prechecks: " + "; ".join(precheck_reasons) if precheck_reasons else "")
         )
 
@@ -462,7 +477,7 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
                         http_status,
                         latency_ms,
                         "empty_response",
-                        "Gemini retornou sem texto",
+                        "Gemini returned no text",
                     )
                     errors.append(
                         {
@@ -470,13 +485,13 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
                             "model": candidate.model_name,
                             "http_status": http_status,
                             "category": "empty_response",
-                            "message": "Gemini retornou sem texto",
+                            "message": "Gemini returned no text",
                         }
                     )
                     continue
 
                 if candidate.provider_key == "gemini_free":
-                    # Limpa erro anterior sem mexer em cooldown ainda vigente (se existir no passado, ok).
+                    # Clear last error metadata without changing any active cooldown.
                     STORE.clear_provider_error("gemini_free")
                 elif candidate.provider_key == "gemini_paid":
                     STORE.clear_provider_error("gemini_paid")
@@ -516,8 +531,8 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
             message = (
                 (error_obj or {}).get("message")
                 if isinstance(error_obj, dict)
-                else f"Erro HTTP {http_status}"
-            ) or f"Erro HTTP {http_status}"
+                else f"HTTP error {http_status}"
+            ) or f"HTTP error {http_status}"
 
             if candidate.provider_key == "gemini_free" and category == "quota_or_rate_limit":
                 until = STORE.set_provider_cooldown(
@@ -526,7 +541,7 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
                     http_status or 429,
                     message,
                 )
-                message = f"{message} (cooldown free ate {iso_utc(until)})"
+                message = f"{message} (free key cooldown until {iso_utc(until)})"
             else:
                 STORE.set_provider_state(candidate.provider_key, None, http_status, str(message))
 
@@ -577,7 +592,7 @@ def attempt_generation(request_id: str, task_type: str, prompt: str, system: str
         "request_id": request_id,
         "ok": False,
         "task_type": task_type,
-        "error": "Todos os candidatos falharam",
+        "error": "All route candidates failed",
         "attempts": errors,
         "precheck_skips": precheck_reasons,
         "timestamp_utc": iso_utc(),
@@ -680,12 +695,12 @@ class RouterHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json()
         except json.JSONDecodeError:
-            self._send_json(400, {"ok": False, "error": "json_invalido"})
+            self._send_json(400, {"ok": False, "error": "invalid_json"})
             return
 
         prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
-            self._send_json(400, {"ok": False, "error": "campo 'prompt' é obrigatório"})
+            self._send_json(400, {"ok": False, "error": "field 'prompt' is required"})
             return
 
         task_type = normalize_task_type(payload.get("task_type"))
@@ -696,7 +711,7 @@ class RouterHandler(BaseHTTPRequestHandler):
             try:
                 temperature = float(temperature)
             except (TypeError, ValueError):
-                self._send_json(400, {"ok": False, "error": "temperature inválido"})
+                self._send_json(400, {"ok": False, "error": "invalid_temperature"})
                 return
 
         max_output_tokens = payload.get("max_output_tokens")
@@ -704,7 +719,7 @@ class RouterHandler(BaseHTTPRequestHandler):
             try:
                 max_output_tokens = int(max_output_tokens)
             except (TypeError, ValueError):
-                self._send_json(400, {"ok": False, "error": "max_output_tokens inválido"})
+                self._send_json(400, {"ok": False, "error": "invalid_max_output_tokens"})
                 return
 
         try:
@@ -747,13 +762,13 @@ class RouterHandler(BaseHTTPRequestHandler):
 def validate_boot_config() -> List[str]:
     warnings = []
     if not CONFIG["gemini_api_key_free"] and not CONFIG["gemini_api_key_paid"]:
-        warnings.append("Nenhuma key Gemini configurada (free/paid).")
+        warnings.append("No Gemini API keys configured (free/paid).")
     if not CONFIG["gemini_model_flash_free"]:
-        warnings.append("GEMINI_MODEL_FLASH_FREE vazio.")
+        warnings.append("GEMINI_MODEL_FLASH_FREE is empty.")
     if not CONFIG["gemini_model_flash_paid"]:
-        warnings.append("GEMINI_MODEL_FLASH_PAID vazio.")
+        warnings.append("GEMINI_MODEL_FLASH_PAID is empty.")
     if not CONFIG["gemini_model_pro"]:
-        warnings.append("GEMINI_MODEL_PRO vazio.")
+        warnings.append("GEMINI_MODEL_PRO is empty.")
     return warnings
 
 
@@ -764,7 +779,7 @@ def main() -> int:
 
     server = ThreadingHTTPServer((CONFIG["host"], CONFIG["port"]), RouterHandler)
     logger.info(
-        "Router iniciado em http://%s:%s (db=%s)",
+        "Router started at http://%s:%s (db=%s)",
         CONFIG["host"],
         CONFIG["port"],
         CONFIG["db_path"],
@@ -772,7 +787,7 @@ def main() -> int:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        logger.info("Encerrando por KeyboardInterrupt")
+        logger.info("Shutting down due to KeyboardInterrupt")
     finally:
         server.server_close()
     return 0
